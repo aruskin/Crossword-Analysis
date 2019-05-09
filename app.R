@@ -1,15 +1,22 @@
 library(shiny)
 library(shinyjs)
+library(stringr)
 
 source("get_latimes_crossword.R")
 
 ui <- fluidPage(
   shinyjs::useShinyjs(),
-  dateRangeInput("dateRange", "Select date range:"),
-  actionButton("getData", "Get Crossword Data!"),
-  downloadButton("downloadData", "Download CSV"),
-  verbatimTextOutput("messageCenter"),
-  tableOutput('top10words')
+  sidebarPanel(
+    dateRangeInput("dateRange", "Select date range:"),
+    actionButton("getData", "Get Crossword Data!"),
+    br(),
+    verbatimTextOutput("messageCenter"),
+    downloadButton("downloadData", "Download CSV")
+  ),
+  mainPanel(
+    h4('Top n most frequent answers:'),
+    numericInput('topN', 'Choose n:', 10, min=1, max=25),
+    tableOutput('topNTable'))
 )
 
 server <- function(input, output, session){
@@ -38,14 +45,16 @@ server <- function(input, output, session){
     max_date <- max(x$clean_data$date)
     n_cwds <- x$clean_data$date %>% unique %>% length
     
-    paste(data_reactive()$message,
-          '\n',
-          paste0("Pulled ", n_cwds, " puzzles from ", min_date, " to ", max_date))
+    message <- paste(data_reactive()$message,
+                      '\n',
+                      paste0("Pulled ", n_cwds, " puzzles from ", min_date, " to ", max_date))
+    str_wrap(message, width = 25)
+    
   })
   
-  output$top10words <- renderTable({
+  output$topNTable <- renderTable({
     x <- data_reactive()
-    n_most_frequent_answers(x$clean_data, 10)
+    n_most_frequent_answers(x$clean_data, input$topN)
   })
   
   output$downloadData <- downloadHandler(
