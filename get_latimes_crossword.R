@@ -3,6 +3,8 @@ library(dplyr)
 library(lubridate)
 library(ggplot2)
 
+##### some functions for scraping & using LA Times crossword data
+
 get_crossword <- function(yyyy, mm, dd){
   month_num <- as.numeric(mm)
   day_num <- as.numeric(dd)
@@ -100,9 +102,14 @@ clean_crossword_dataset <- function(data){
   temp_data <- mutate(data, clean_answers = strip_answers(answer))
   malformed_rows <- grep('[a-z]', temp_data$clean_answers)
   bad_dates <- temp_data[malformed_rows,]$date %>% unique
-  message <- paste0("Had issues processing crosswords from ", 
-               paste0(bad_dates, collapse = ", "),
-               ". Removing from dataset.")
+  if(length(malformed_rows) > 0){
+    message <- paste0("Had issues processing crosswords from ", 
+                      paste0(bad_dates, collapse = ", "),
+                      ". Removing from dataset.")
+  }else{
+    message <- "No processing errors detected"
+  }
+  
   clean_data <- filter(temp_data, !(date %in% bad_dates))
   list(clean_data=clean_data, message=message, bad_data=temp_data[malformed_rows,])
 }
@@ -128,6 +135,7 @@ n_most_frequent_answers <- function(data, n){
     group_by(clean_answers) %>% 
     summarise(count=n()) %>%
     arrange(-count)
+  colnames(most_freq_answers) <- c('Answer', 'Occurrences')
   most_freq_answers[1:n,]
 }
 
@@ -140,28 +148,3 @@ search_answers <- function(data, word){
   matches <- grep(word, data$clean_answers, ignore.case = TRUE)
   select(data[matches,], one_of(c('date', 'clue', 'answer')))
 }
-
-##################################################
-# may want to eventually add error handling here (i.e. make sure user
-# actually entered date, make sure that max_date later than min_date)
-min_date <- readline(prompt="Enter beginning date (yyyy-mm-dd):")
-max_date <- readline(prompt="Enter end date (yyyy-mm-dd):")
-
-# this will probably take a while
-system.time(my_data <- get_crosswords_range(min_date, max_date))
-
-# should expect these to be in the 70s Monday through Saturday (although
-# Saturday might be a bit less since they tend to have more long words)
-# and in the 140s on Sundays
-check_counts <- my_data %>% group_by(date) %>% summarise(count=n())
-
-x <- clean_crossword_dataset(my_data)
-
-# What went wrong in processing?
-print(x$message)
-x$bad_data
-
-n_cwds <- x$clean_data$date %>% unique %>% length
-print(paste0("Pulled ", n_cwds, " puzzles from ", min_date, " to ", max_date))
-
-write.csv(x$clean_data, paste0('lax_cwd_', min_date, '_', max_date, '.csv'))
