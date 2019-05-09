@@ -5,6 +5,9 @@ library(ggplot2)
 
 ##### some functions for scraping & using LA Times crossword data
 
+# earliest crossword on laxcrossword.com is from September 18, 2012
+MIN_AVAILABLE_DATE <- as.Date('2012-09-18')
+
 get_crossword <- function(yyyy, mm, dd){
   month_num <- as.numeric(mm)
   day_num <- as.numeric(dd)

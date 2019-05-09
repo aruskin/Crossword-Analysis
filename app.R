@@ -3,8 +3,7 @@ library(shiny)
 source("get_latimes_crossword.R")
 
 ui <- fluidPage(
-  dateInput("minDate", "Beginning Date:"),
-  dateInput("maxDate", "End Date"),
+  dateRangeInput("dateRange", "Select date range:"),
   actionButton("getData", "Get Crossword Data!"),
   verbatimTextOutput("messageCenter"),
   tableOutput('top10words')
@@ -12,14 +11,17 @@ ui <- fluidPage(
 
 server <- function(input, output, session){
   data_reactive <- eventReactive(input$getData, {
+    min_date <- input$dateRange[1]
+    max_date <- input$dateRange[2]
     validate(
-      need(!(is.na(input$minDate) | is.na(input$maxDate)), 'Must enter beginning and end dates'),
-      need(input$minDate <= input$maxDate, 'Beginning date must be earlier than end date'),
-      need(input$maxDate <= Sys.Date(), 'End date cannot be in future')
-      # should also check when earliest available crossword is and make sure min date 
-      # isn't before that
+      need(!(is.na(min_date) | is.na(max_date)), 'Must enter beginning and end dates'),
+      need(min_date <= max_date, 'Beginning date must be earlier than end date'),
+      need(max_date <= Sys.Date(), 'End date cannot be in future'),
+      need(min_date >= MIN_AVAILABLE_DATE, 
+           paste('Earliest available crossword is from',
+                 as.character(MIN_AVAILABLE_DATE)))
     )
-    my_data <- get_crosswords_range(input$minDate, input$maxDate)
+    my_data <- get_crosswords_range(min_date, max_date)
     x <- clean_crossword_dataset(my_data)
     x
   })
