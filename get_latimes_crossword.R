@@ -9,12 +9,29 @@ library(ggplot2)
 MIN_AVAILABLE_DATE <- as.Date('2012-09-18')
 
 get_crossword <- function(yyyy, mm, dd){
+  #' Scrape single crossword puzzle
+  #' 
+  #' @description Scrape the LA Times crossword puzzle for a given date from 
+  #' the web
+  #' 
+  #' @param yyyy 4-digit year as string
+  #' @param mm 2-digit month as string
+  #' @param dd 2-digit day as string
+  #' 
+  #' @details Inputs represent date of crossword puzzle to pull
+  #' 
+  #' @return A data.frame representation of the LA Times crossword from the 
+  #' given date
+  #' 
+  #' @note Crosswords currently pulled from the blog laxcrossword.com
+  #' 
   month_num <- as.numeric(mm)
   day_num <- as.numeric(dd)
   month_abb <- month.abb[month_num]
   yy <- substr(yyyy, 3, 4)
   day_of_week <- weekdays.Date(as.Date(paste0(yyyy, '-', mm, '-', dd)))
   
+  # Site changed URL formatting at some point in 2016
   if(yyyy < 2017){
     site <- GET(paste0('https://laxcrossword.com/', yyyy, '/', mm, '/',
                        'la-times-crossword-answers-', day_num, 
@@ -27,22 +44,26 @@ get_crossword <- function(yyyy, mm, dd){
   if(site$status == 404)
     site <- GET(paste0('https://laxcrossword.com/', yyyy, '/', mm, '/', dd))
   
+  # Figure out where formatted list of clues and answers starts
   headers <- c('<h2 id="all-clues">Complete List of Clues/Answers</h2>', 
                '<i><b>Across</b><br />',
                '<h2 id="all-clues">Complete List of Clues and Answers</h2>') %>%
     paste0('(', ., ')') %>%
     paste0(., collapse='|')
   
+  # Figure out where formatted list of clues and answers ends
   footers <- c('</p></div>', '</i></p>', '</div>',
                '<p id=\"post_bottom\" class=\"return_to_top\"><a href=\"#top\">Return to top of page</a></p>') %>%
     paste0('(', ., ')') %>%
     paste0(., collapse='|')
   
+  # HTML tags that we feel fine about stripping from text
   gross_html <- c('<p>', '<p class=\"no_bottom_margin\"><em>', '	</em>',
                   '</p>', '<br />') %>%
     paste0('(', ., ')') %>%
     paste0(., collapse='|')
-    
+  
+  # Try to get page content down to easy-to-process text w/just clues & answers
   txt <- content(site, "text") %>%
     strsplit(headers) %>% unlist %>% .[2] %>%
     strsplit(footers)  %>% unlist %>% .[1] %>%
@@ -52,7 +73,8 @@ get_crossword <- function(yyyy, mm, dd){
     gsub(pattern = "[0-9]+[.][ ]*", replacement = "", .)
   
   tryCatch({
-    # analogy clues are going to fuck things up for us
+    # Analogy clues are going to fuck things up for us (wrt recognizing colon as clue : answer 
+    # divider rather than "is to" representation)
     analogies <- grep('.+ : .+ :: .+ :', txt)
     analogy_handler <- function(analogy){
       analogy <- analogy %>% strsplit(':') %>% unlist
@@ -65,6 +87,9 @@ get_crossword <- function(yyyy, mm, dd){
     
     txt <- gsub(pattern = "  (&#8220;|&#8221;|&#8217;)", replacement = " ",
                 x = txt)
+    
+    # Try to figure out where to split each line to separate clue from answer
+    # Should account for most cases, but not perfect
     z <- lapply(txt, function(x) strsplit(x, "( +: +)|(  )|( &nbsp;)") %>% unlist) %>%
       do.call("rbind", .) %>%
       as.data.frame(stringsAsFactors=FALSE) %>%
@@ -76,10 +101,23 @@ get_crossword <- function(yyyy, mm, dd){
   }, error = function(e) {
     data.frame(clue=NA, answer=NA, date=as.Date(paste0(yyyy, '-', mm, '-', dd)))
   })
-  
 }
 
 get_crosswords_range <- function(start_date, end_date){
+  #' Scrape crosswords in date range
+  #' 
+  #' @description Scrape the LA Times crossword puzzles for a given date range
+  #' from the web
+  #' 
+  #' @param start_date beginning of date range as yyyy-mm-dd string
+  #' @param end_date end of date range as yyyy-mm-dd string
+  #' 
+  #' @return A data.frame representation of all LA Times crossword puzzles from
+  #'  the given date range, with columns corresponding to clues, answers, and 
+  #'  dates
+  #' 
+  #' @note Crosswords currently pulled from the blog laxcrossword.com
+  #' 
   all_dates <- seq(ymd(start_date), ymd(end_date), by='1 day')
   z <- lapply(all_dates,
               function(x) {
@@ -91,8 +129,11 @@ get_crosswords_range <- function(start_date, end_date){
 }
 
 strip_answers <- function(answers){
-  # unfortunately not all answers have right parenthesis, but hopefully none
-  # of them have parenthetical statement before answer?
+  #' Remove extraneous characters from answers
+  #' 
+  #' @param answers vector of crossword answers
+  #' 
+  #' @return Vector of crossword answers stripped of extraneous characters
   gsub(pattern = '[(].*', '', answers) %>% 
     gsub(pattern = '(<b>)|(</b>)', replacement = '', x = .) %>% 
     gsub(pattern = '(&#8212;) [a-z]+.*', replacement = '', x = .) %>% 
@@ -102,6 +143,16 @@ strip_answers <- function(answers){
 }
 
 clean_crossword_dataset <- function(data){
+  #' Clean crossword data
+  #'
+  #' @description Clean answers in crossword dataset and identify & remove
+  #' puzzles with processing issues
+  #' 
+  #' @param data data.frame representation of crossword data
+  #' 
+  #' @return A list containing the data.frame with the cleaned answers & 
+  #' problematic puzzles removed, a descriptive message, and a data.frame 
+  #' containing the problematic rows
   temp_data <- mutate(data, clean_answers = strip_answers(answer))
   malformed_rows <- grep('[a-z]', temp_data$clean_answers)
   bad_dates <- temp_data[malformed_rows,]$date %>% unique
@@ -115,6 +166,53 @@ clean_crossword_dataset <- function(data){
   
   clean_data <- filter(temp_data, !(date %in% bad_dates))
   list(clean_data=clean_data, message=message, bad_data=temp_data[malformed_rows,])
+}
+
+n_most_frequent_answers <- function(data, n){
+  #' Create most frequent answers table
+  #'
+  #' @param data crossword data containing clean_answers column
+  #' @param n number of most frequent answers to return
+  #' 
+  #' @return A data.frame with the n most frequently occurring answers in
+  #' data and the number of times they occur
+  #' 
+  #' @note Not currently handling ties in any special way--will likely just
+  #' be ranked alphabetically
+  most_freq_answers <- data %>% 
+    group_by(clean_answers) %>% 
+    summarise(count=n()) %>%
+    arrange(-count)
+  colnames(most_freq_answers) <- c('Answer', 'Occurrences')
+  most_freq_answers[1:n,]
+}
+
+search_clues <- function(data, word){
+  #' Search over crossword clues
+  #' 
+  #' @param data crossword data
+  #' @param word search term to find in clues
+  #' 
+  #' @return All rows in crossword data where search term occurs in clue
+  #' 
+  #' @note The returned table will show the original answer rather than the 
+  #' cleaned answer to provide more context.
+  matches <- grep(word, data$clue, ignore.case = TRUE)
+  select(data[matches,], one_of(c('date', 'clue', 'answer')))
+}
+
+search_answers <- function(data, word){
+  #' Search over crossword answers
+  #' 
+  #' @param data crossword data
+  #' @param word search term to find in answers
+  #' 
+  #' @return All rows in crossword data where search term occurs in answer
+  #' 
+  #' @note We are not doing exact matching (e.g. a search for 'OUST' could 
+  #' return answers 'JOUST' or 'OUSTING'). 
+  matches <- grep(word, data$clean_answers, ignore.case = TRUE)
+  select(data[matches,], one_of(c('date', 'clue', 'answer')))
 }
 
 plot_word_usage <- function(data, word){
@@ -131,23 +229,4 @@ plot_word_usage <- function(data, word){
   #   gather(metric, value, word_used_ma7:word_used_ma28) %>%
   #   ggplot(aes(date, value, color = metric))
   ggplot(usage, aes(x=date, y=word_used)) + geom_smooth() + geom_point()
-}
-
-n_most_frequent_answers <- function(data, n){
-  most_freq_answers <- data %>% 
-    group_by(clean_answers) %>% 
-    summarise(count=n()) %>%
-    arrange(-count)
-  colnames(most_freq_answers) <- c('Answer', 'Occurrences')
-  most_freq_answers[1:n,]
-}
-
-search_clues <- function(data, word){
-  matches <- grep(word, data$clue, ignore.case = TRUE)
-  select(data[matches,], one_of(c('date', 'clue', 'answer')))
-}
-
-search_answers <- function(data, word){
-  matches <- grep(word, data$clean_answers, ignore.case = TRUE)
-  select(data[matches,], one_of(c('date', 'clue', 'answer')))
 }
