@@ -2,25 +2,38 @@ library(shiny)
 library(shinyjs)
 library(stringr)
 
-source("get_latimes_crossword.R")
+source('get_latimes_crossword.R')
 
 ui <- fluidPage(
   shinyjs::useShinyjs(),
   sidebarPanel(
-    dateRangeInput("dateRange", "Select date range:"),
-    actionButton("getData", "Get Crossword Data!"),
+    dateRangeInput('dateRange', 'Select date range:'),
+    actionButton('getData', 'Get Crossword Data!'),
     br(),
-    verbatimTextOutput("messageCenter"),
-    downloadButton("downloadData", "Download CSV")
+    verbatimTextOutput('messageCenter'),
+    downloadButton('downloadData', 'Download CSV')
   ),
   mainPanel(
-    h4('Top n most frequent answers:'),
-    numericInput('topN', 'Choose n:', 10, min=1, max=25),
-    tableOutput('topNTable'))
+    fluidRow(
+      column(3, 
+             h4('Top n most frequent answers:'),
+             numericInput('topN', 'Choose n:', 10, min=1, max=25),
+             tableOutput('topNTable')),
+      column(4,
+             h4('Search answers or clues:'),
+             selectInput('searchType', label=NULL, 
+                         choices=c('Answers', 'Clues'),
+                         selected='Answers'),
+             textInput('searchQuery', label=NULL),
+             actionButton('searchButton', label='Search'),
+             tableOutput('searchResultsTable'))
+    )
+  )
 )
 
 server <- function(input, output, session){
-  shinyjs::disable("downloadData")
+  shinyjs::disable('downloadData')
+  shinyjs::disable('searchButton')
   
   data_reactive <- eventReactive(input$getData, {
     min_date <- input$dateRange[1]
@@ -35,8 +48,20 @@ server <- function(input, output, session){
     )
     my_data <- get_crosswords_range(min_date, max_date)
     x <- clean_crossword_dataset(my_data)
-    shinyjs::enable("downloadData")
+    shinyjs::enable('downloadData')
+    shinyjs::enable('searchButton')
     x
+  })
+  
+  search_query <- eventReactive(input$searchButton, {
+    validate(
+      need(input$searchQuery != "", 'Please enter a search term')
+    )
+    x <- data_reactive()
+    if(input$searchType == 'Answers')
+      search_answers(x$clean_data, input$searchQuery)
+    else
+      search_clues(x$clean_data, input$searchQuery)
   })
   
   output$messageCenter<- renderText({
@@ -46,15 +71,26 @@ server <- function(input, output, session){
     n_cwds <- x$clean_data$date %>% unique %>% length
     
     message <- paste(data_reactive()$message,
-                      '\n',
-                      paste0("Pulled ", n_cwds, " puzzles from ", min_date, " to ", max_date))
+                     '\n',
+                     paste0('Pulled ', n_cwds, ' puzzles from ', min_date, ' to ', max_date))
     str_wrap(message, width = 25)
     
   })
   
   output$topNTable <- renderTable({
+    validate(
+      need(!is.na(input$topN), 'Please select n'),
+      need(input$topN >= 1, 'Please select positive nonzero n'),
+      need(input$topN <= 25, 'Will only display up to top 25')
+    )
     x <- data_reactive()
     n_most_frequent_answers(x$clean_data, input$topN)
+  })
+  
+  output$searchResultsTable <- renderTable({
+    table_out <- search_query()
+    table_out <- mutate(table_out, date = as.character(date))
+    table_out
   })
   
   output$downloadData <- downloadHandler(

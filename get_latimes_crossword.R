@@ -110,7 +110,7 @@ clean_crossword_dataset <- function(data){
                       paste0(bad_dates, collapse = ", "),
                       ". Removing from dataset.")
   }else{
-    message <- "No processing errors detected"
+    message <- "No processing errors detected."
   }
   
   clean_data <- filter(temp_data, !(date %in% bad_dates))
